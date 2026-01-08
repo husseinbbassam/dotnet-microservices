@@ -1,72 +1,194 @@
 version: '3.4'
 
 services:
-  transactiondb:
-    image: mongo
-    
-  accountdb:
-    image: postgres
-    
-  customerdb:
-    image: postgres
 
+  # ---------------------------
+  # PostgreSQL - Customer
+  # ---------------------------
+  customerdb:
+    image: postgres:16
+    container_name: customerdb
+    environment:
+      POSTGRES_DB: customerdb
+      POSTGRES_USER: customer_user
+      POSTGRES_PASSWORD: customer_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - customer_postgres_data:/var/lib/postgresql/data
+
+  # ---------------------------
+  # PostgreSQL - Account
+  # ---------------------------
+  accountdb:
+    image: postgres:16
+    container_name: accountdb
+    environment:
+      POSTGRES_DB: accountdb
+      POSTGRES_USER: account_user
+      POSTGRES_PASSWORD: account_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - account_postgres_data:/var/lib/postgresql/data
+
+  # ---------------------------
+  # MongoDB - Transactions
+  # ---------------------------
+  transactiondb:
+    image: mongo:6
+    container_name: transactiondb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  # ---------------------------
+  # RabbitMQ
+  # ---------------------------
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: rabbit_user
+      RABBITMQ_DEFAULT_PASS: rabbit_pass
 
+  # ---------------------------
+  # pgAdmin (Postgres GUI)
+  # ---------------------------
   pgadmin:
-    image: dpage/pgadmin4  
-    
-  mongo-express:
-    image: mongo-express
-    
-  portainer:
-    image: portainer/portainer-ce
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - customerdb
+      - accountdb
 
-  transaction.api:
-    image: ${DOCKER_REGISTRY-}transactionapi
-    build:
-      context: .
-      dockerfile: Services/Transaction/Transaction.API/Dockerfile
-
-  account.api:
-    image: ${DOCKER_REGISTRY-}accountapi
-    build:
-      context: .
-      dockerfile: Services/Account/Account.API/Dockerfile
-
-  customer.api:
-    image: ${DOCKER_REGISTRY-}customerapi
-    build:
-      context: .
-      dockerfile: Services/Customer/Customer.API/Dockerfile
-
+  # ---------------------------
+  # Customer gRPC
+  # ---------------------------
   customer.grpc:
-    image: ${DOCKER_REGISTRY-}customergrpc
     build:
       context: .
       dockerfile: Services/Customer/Customer.GRPC/Dockerfile
+    container_name: customer.grpc
+    ports:
+      - "5001:80"
+    depends_on:
+      - customerdb
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__CustomerConnectionString: "Host=customerdb;Port=5432;Database=customerdb;Username=customer_user;Password=customer_pass"
 
+  # ---------------------------
+  # Customer API
+  # ---------------------------
+  customer.api:
+    build:
+      context: .
+      dockerfile: Services/Customer/Customer.API/Dockerfile
+    container_name: customer.api
+    ports:
+      - "8001:8080"
+    depends_on:
+      - customerdb
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__CustomerConnectionString: "Host=customerdb;Port=5432;Database=customerdb;Username=customer_user;Password=customer_pass"
+
+  # ---------------------------
+  # Account API
+  # ---------------------------
+  account.api:
+    build:
+      context: .
+      dockerfile: Services/Account/Account.API/Dockerfile
+    container_name: account.api
+    ports:
+      - "8002:8080"
+    depends_on:
+      - accountdb
+      - rabbitmq
+      - customer.grpc
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__AccountConnectionString: "Host=accountdb;Port=5432;Database=accountdb;Username=account_user;Password=account_pass"
+      EventBusSettings__HostAddress: "amqp://rabbit_user:rabbit_pass@rabbitmq:5672"
+      GrpcSettings__CustomerUrl: "http://customer.grpc:80"
+
+  # ---------------------------
+  # Transaction API
+  # ---------------------------
+  transaction.api:
+    build:
+      context: .
+      dockerfile: Services/Transaction/Transaction.API/Dockerfile
+    container_name: transaction.api
+    ports:
+      - "8003:8080"
+    depends_on:
+      - transactiondb
+      - rabbitmq
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DatabaseSettings__ConnectionString: "mongodb://transactiondb:27017"
+      DatabaseSettings__DatabaseName: "TransactionDb"
+      DatabaseSettings__CollectionName: "Transactions"
+      EventBusSettings__HostAddress: "amqp://rabbit_user:rabbit_pass@rabbitmq:5672"
+
+  # ---------------------------
+  # API Gateway (Ocelot)
+  # ---------------------------
   ocelotapigateway:
-    image: ${DOCKER_REGISTRY-}ocelotapigateway
     build:
       context: .
       dockerfile: ApiGateways/OcelotApiGateway/Dockerfile
+    container_name: ocelotapigateway
+    ports:
+      - "8010:8080"
+    depends_on:
+      - customer.api
+      - account.api
+      - transaction.api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: "http://*:8080"
 
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:7.9.2
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana:7.9.2
-
+  # ---------------------------
+  # Web Status Dashboard
+  # ---------------------------
   webstatus:
-    image: ${DOCKER_REGISTRY-}webstatus
     build:
       context: .
       dockerfile: WebApps/WebStatus/Dockerfile
+    container_name: webstatus
+    ports:
+      - "8080:80"
+    depends_on:
+      - customer.api
+      - account.api
+      - transaction.api
+      - ocelotapigateway
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      HealthChecksUI__HealthChecks__0__Name: "Customer API"
+      HealthChecksUI__HealthChecks__0__Uri: "http://customer.api:8080/hc"
+      HealthChecksUI__HealthChecks__1__Name: "Account API"
+      HealthChecksUI__HealthChecks__1__Uri: "http://account.api:8080/hc"
+      HealthChecksUI__HealthChecks__2__Name: "Transaction API"
+      HealthChecksUI__HealthChecks__2__Uri: "http://transaction.api:8080/hc"
 
 volumes:
+  customer_postgres_data:
+  account_postgres_data:
   mongo_data:
-  portainer_data:
-  postgres_data:
   pgadmin_data:
-  elasticsearch-data:

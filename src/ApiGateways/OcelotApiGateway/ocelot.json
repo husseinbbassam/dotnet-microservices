@@ -7,7 +7,7 @@
       "DownstreamHostAndPorts": [
         {
           "Host": "transaction.api",
-          "Port": "8080"
+          "Port": 8080
         }
       ],
       "UpstreamPathTemplate": "/Transactions/{accountId}",
@@ -19,7 +19,7 @@
       "DownstreamHostAndPorts": [
         {
           "Host": "transaction.api",
-          "Port": "8080"
+          "Port": 8080
         }
       ],
       "UpstreamPathTemplate": "/Transactions",
@@ -32,7 +32,7 @@
       "DownstreamHostAndPorts": [
         {
           "Host": "account.api",
-          "Port": "8080"
+          "Port": 8080
         }
       ],
       "UpstreamPathTemplate": "/Accounts",
@@ -44,7 +44,7 @@
       "DownstreamHostAndPorts": [
         {
           "Host": "account.api",
-          "Port": "8080"
+          "Port": 8080
         }
       ],
       "UpstreamPathTemplate": "/Accounts/Adding",
@@ -56,7 +56,7 @@
       "DownstreamHostAndPorts": [
         {
           "Host": "account.api",
-          "Port": "8080"
+          "Port": 8080
         }
       ],
       "UpstreamPathTemplate": "/Accounts/Withdrawing",
@@ -68,7 +68,7 @@
       "DownstreamHostAndPorts": [
         {
           "Host": "account.api",
-          "Port": "8080"
+          "Port": 8080
         }
       ],
       "UpstreamPathTemplate": "/Accounts/{id}",
@@ -81,7 +81,7 @@
       "DownstreamHostAndPorts": [
         {
           "Host": "customer.api",
-          "Port": "8080"
+          "Port": 8080
         }
       ],
       "UpstreamPathTemplate": "/Customers",
@@ -93,7 +93,7 @@
       "DownstreamHostAndPorts": [
         {
           "Host": "customer.api",
-          "Port": "8080"
+          "Port": 8080
         }
       ],
       "UpstreamPathTemplate": "/Customers/{id}",

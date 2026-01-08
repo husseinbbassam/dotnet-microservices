@@ -1,6 +1,8 @@
+version: '3.4'
+
 x-db-env: &db-env
-  POSTGRES_USER: customer_user
-  POSTGRES_PASSWORD: customer_pass
+  POSTGRES_USER: admin
+  POSTGRES_PASSWORD: admin1234
 
 services:
   transactiondb:
@@ -14,25 +16,24 @@ services:
   accountdb:
     container_name: accountdb
     environment:
-      POSTGRES_USER: account_user
-      POSTGRES_PASSWORD: account_pass
-      POSTGRES_DB: accountdb
+      <<: *db-env
+      POSTGRES_DB: AccountDb
     restart: always
     ports:
-      - "5434:5432"
+      - "5433:5432"
     volumes:
-      - account_postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data/
 
   customerdb:
     container_name: customerdb
     environment:
       <<: *db-env
-      POSTGRES_DB: customerdb
+      POSTGRES_DB: CustomerDb
     restart: always
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
-      - customer_postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data/
 
   rabbitmq:
     container_name: rabbitmq
@@ -44,8 +45,8 @@ services:
   pgadmin:
     container_name: pgadmin
     environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
-      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_DEFAULT_EMAIL=alperen@kucukali.com
+      - PGADMIN_DEFAULT_PASSWORD=admin1234
     restart: always
     ports:
         - "5050:80"
@@ -54,23 +55,22 @@ services:
     
   mongo-express:
     image: mongo-express
-    container_name: mongo-express
     environment:
       - ME_CONFIG_MONGODB_SERVER=transactiondb
       - ME_CONFIG_MONGODB_PORT=27017
       - ME_CONFIG_BASICAUTH_USERNAME=admin
       - ME_CONFIG_BASICAUTH_PASSWORD=admin1234
     restart: always
-    depends_on:
-      - transactiondb
     ports:
       - "8081:8081"
+    volumes:
+      - mongo_data:/data/db
   
   portainer:
-    image: portainer/portainer-ce:latest
     container_name: portainer
     restart: always
     ports:
+      - "8080:8000"
       - "9000:9000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -80,73 +80,68 @@ services:
     container_name: transaction.api
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - DatabaseSettings__ConnectionString=mongodb://transactiondb:27017
-      - DatabaseSettings__DatabaseName=TransactionDb
-      - DatabaseSettings__CollectionName=Transactions
-      - EventBusSettings__HostAddress=amqp://rabbit_user:rabbit_pass@rabbitmq:5672
-      - ElasticConfiguration__Uri=http://elasticsearch:9200
+      - "DatabaseSettings:ConnectionString=mongodb://transactiondb:27017"
+      - "EventBusSettings:HostAddress=amqp://guest:guest@rabbitmq:5672"
+      - "ElasticConfiguration:Uri=http://elasticsearch:9200"
     depends_on:
       - transactiondb
       - rabbitmq
     ports:
-      - "8003:80"
+      - "8000:8080"
 
   account.api:
     container_name: account.api
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__AccountConnectionString=Host=accountdb;Port=5432;Database=accountdb;Username=account_user;Password=account_pass
-      - GrpcSettings__CustomerUrl=http://customer.grpc:80
-      - EventBusSettings__HostAddress=amqp://rabbit_user:rabbit_pass@rabbitmq:5672
-      - ElasticConfiguration__Uri=http://elasticsearch:9200
+      - "DatabaseSettings:ConnectionString=Server=accountdb;Port=5432;Database=AccountDb;User Id=admin;Password=admin1234;"
+      - "GrpcSettings:CustomerUrl=http://customer.grpc"
+      - "EventBusSettings:HostAddress=amqp://guest:guest@rabbitmq:5672"
+      - "ElasticConfiguration:Uri=http://elasticsearch:9200"
     depends_on:
       - accountdb
       - rabbitmq
-      - customer.grpc
     ports:
-      - "8002:80"
+      - "8001:8080"
 
   customer.api:
     container_name: customer.api
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__CustomerConnectionString=Host=customerdb;Port=5432;Database=customerdb;Username=customer_user;Password=customer_pass
-      - ElasticConfiguration__Uri=http://elasticsearch:9200
+      - "DatabaseSettings:ConnectionString=Server=customerdb;Port=5432;Database=CustomerDb;User Id=admin;Password=admin1234;"
+      - "ElasticConfiguration:Uri=http://elasticsearch:9200"
     depends_on:
       - customerdb
     ports:
-      - "8001:80"
+      - "8002:8080"
 
   customer.grpc:
     container_name: customer.grpc
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__CustomerConnectionString=Host=customerdb;Port=5432;Database=customerdb;Username=customer_user;Password=customer_pass
-      - ElasticConfiguration__Uri=http://elasticsearch:9200
+      - "DatabaseSettings:ConnectionString=Server=customerdb;Port=5432;Database=CustomerDb;User Id=admin;Password=admin1234;"
+      - "ElasticConfiguration:Uri=http://elasticsearch:9200"
     depends_on:
       - customerdb
     ports:
-      - "5001:80"
+      - "5001:8080"
 
   ocelotapigateway:
     container_name: ocelotapigateway
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ElasticConfiguration__Uri=http://elasticsearch:9200
+      - "ElasticConfiguration:Uri=http://elasticsearch:9200"
     depends_on:
         - customer.api
         - account.api
         - transaction.api
     ports:
-      - "8010:80"
+      - "8010:8080"
 
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     container_name: elasticsearch
     environment:
         - xpack.monitoring.enabled=true
         - xpack.watcher.enabled=false
-        - xpack.security.enabled=false
         - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
         - discovery.type=single-node
     ports:
@@ -155,10 +150,9 @@ services:
         - elasticsearch-data:/usr/share/elasticsearch/data   
 
   kibana:
-    image: docker.elastic.co/kibana/kibana:8.11.0
     container_name: kibana
     environment:        
-        - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+        - ELASTICSEARCH_URL=http://elasticsearch:9200
     depends_on:
         - elasticsearch
     ports:
@@ -169,10 +163,10 @@ services:
     environment:
         - ASPNETCORE_ENVIRONMENT=Development
         - HealthChecksUI__HealthChecks__0__Name=Customer Health Check
-        - HealthChecksUI__HealthChecks__0__Uri=http://customer.api:80/hc
+        - HealthChecksUI__HealthChecks__0__Uri=http://customer.api:8080/hc
         - HealthChecksUI__HealthChecks__1__Name=Account Health Check
-        - HealthChecksUI__HealthChecks__1__Uri=http://account.api:80/hc
+        - HealthChecksUI__HealthChecks__1__Uri=http://account.api:8080/hc
         - HealthChecksUI__HealthChecks__2__Name=Transaction Health Check
-        - HealthChecksUI__HealthChecks__2__Uri=http://transaction.api:80/hc
+        - HealthChecksUI__HealthChecks__2__Uri=http://transaction.api:8080/hc
     ports:
-        - "8080:80"
+        - "8007:8080"
